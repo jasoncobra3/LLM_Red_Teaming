@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Red Teaming Platform - Home{% endblock %}
+{% block nav_home %}active{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="row mb-4 fade-in">
+    <div class="col-12">
+        <div class="card" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: white;">
+            <div class="card-body py-5 px-4">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h1 class="display-5 fw-bold mb-3">
+                            <i class="fas fa-shield-halved me-3" style="color: var(--red-team-color);"></i>
+                            LLM Red Teaming Platform
+                        </h1>
+                        <p class="lead mb-4 text-white-50">
+                            Comprehensive adversarial testing for Large Language Models.
+                            Powered by DeepTeam framework with multi-provider LangChain support.
+                        </p>
+                        <div class="d-flex flex-wrap gap-2 mb-4">
+                            <span class="badge bg-danger px-3 py-2">
+                                <i class="fas fa-bug me-1"></i> {{ vuln_count }} Vulnerabilities
+                            </span>
+                            <span class="badge bg-warning text-dark px-3 py-2">
+                                <i class="fas fa-crosshairs me-1"></i> {{ attack_count }} Attacks
+                            </span>
+                            <span class="badge bg-info px-3 py-2">
+                                <i class="fas fa-shield me-1"></i> {{ framework_count }} Frameworks
+                            </span>
+                            <span class="badge bg-success px-3 py-2">
+                                <i class="fas fa-server me-1"></i> {{ configured_count }}/{{ total_providers }} Providers Ready
+                            </span>
+                        </div>
+                        <div class="d-flex gap-3">
+                            <a href="/attack" class="btn btn-red-team btn-lg">
+                                <i class="fas fa-crosshairs me-2"></i> Launch Attack Lab
+                            </a>
+                            <a href="/dashboard" class="btn btn-outline-light btn-lg">
+                                <i class="fas fa-tachometer-alt me-2"></i> View Dashboard
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-center d-none d-md-block">
+                        <div style="font-size: 8rem; opacity: 0.15;">
+                            <i class="fas fa-shield-halved"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Feature Cards -->
+<div class="row mb-4 g-4 fade-in">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header card-header-red">
+                <h5 class="mb-0">
+                    <i class="fas fa-crosshairs text-danger me-2"></i>
+                    Attack Lab
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>Launch adversarial attacks against your LLMs with 21 attack strategies including prompt injection, jailbreaking, encoding-based attacks, and more.</p>
+                <ul class="list-unstyled small text-muted">
+                    <li><i class="fas fa-check text-success me-2"></i>16 Single-turn attacks</li>
+                    <li><i class="fas fa-check text-success me-2"></i>5 Multi-turn attacks</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Crescendo & Tree Jailbreaking</li>
+                </ul>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/attack" class="btn btn-red-team w-100">
+                    <i class="fas fa-play me-2"></i> Open Attack Lab
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header card-header-blue">
+                <h5 class="mb-0">
+                    <i class="fas fa-tachometer-alt text-primary me-2"></i>
+                    Scan History & Dashboard
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>Track all scan runs, monitor results in real-time, and analyze vulnerability patterns across your target models.</p>
+                <ul class="list-unstyled small text-muted">
+                    <li><i class="fas fa-check text-success me-2"></i>Real-time scan tracking</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Historical comparisons</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Vulnerability breakdown</li>
+                </ul>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/dashboard" class="btn btn-target w-100">
+                    <i class="fas fa-chart-line me-2"></i> View Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header card-header-green">
+                <h5 class="mb-0">
+                    <i class="fas fa-file-alt text-success me-2"></i>
+                    Reports
+                </h5>
+            </div>
+            <div class="card-body">
+                <p>Generate comprehensive reports in PDF, CSV, and JSON formats. Export findings for stakeholders and compliance audits.</p>
+                <ul class="list-unstyled small text-muted">
+                    <li><i class="fas fa-check text-success me-2"></i>PDF executive reports</li>
+                    <li><i class="fas fa-check text-success me-2"></i>CSV data exports</li>
+                    <li><i class="fas fa-check text-success me-2"></i>JSON raw data</li>
+                </ul>
+            </div>
+            <div class="card-footer bg-transparent border-0">
+                <a href="/reports" class="btn btn-success w-100">
+                    <i class="fas fa-download me-2"></i> View Reports
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Supported Providers -->
+<div class="row mb-4 fade-in">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-server me-2"></i> Supported LLM Providers</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3" id="providerCards"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="row fade-in">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-heartbeat me-2 text-danger"></i> System Status</h5>
+            </div>
+            <div class="card-body" id="systemStatus">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                    Checking system health...
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-bolt me-2 text-warning"></i> Quick Start</h5>
+            </div>
+            <div class="card-body">
+                <ol class="mb-0">
+                    <li class="mb-2">
+                        <strong>Configure providers</strong> &mdash;
+                        <a href="/config">Set up API keys</a> for your LLM providers
+                    </li>
+                    <li class="mb-2">
+                        <strong>Launch Attack Lab</strong> &mdash;
+                        <a href="/attack">Select attacker/target models</a>, choose vulnerabilities and attacks
+                    </li>
+                    <li class="mb-2">
+                        <strong>Review results</strong> &mdash;
+                        <a href="/dashboard">View the dashboard</a> for detailed findings
+                    </li>
+                    <li>
+                        <strong>Generate reports</strong> &mdash;
+                        <a href="/reports">Export findings</a> as PDF, CSV, or JSON
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Load providers
+    $.get('/api/providers').done(function(providers) {
+        let html = '';
+        const icons = {
+            openai: 'fa-robot', anthropic: 'fa-brain', azure_openai: 'fa-cloud',
+            google_gemini: 'fa-gem', aws_bedrock: 'fa-aws', huggingface: 'fa-face-smile',
+            groq: 'fa-bolt', deepseek: 'fa-magnifying-glass'
+        };
+        for (const [pid, info] of Object.entries(providers)) {
+            const statusClass = info.configured ? 'text-success' : 'text-muted';
+            const statusIcon = info.configured ? 'fa-check-circle' : 'fa-circle';
+            const icon = icons[pid] || 'fa-server';
+            html += `
+                <div class="col-md-3 col-sm-6">
+                    <div class="card text-center p-3 h-100">
+                        <div class="mb-2">
+                            <i class="fas ${icon} fs-3 ${info.configured ? 'text-primary' : 'text-muted'}"></i>
+                        </div>
+                        <h6 class="mb-1">${info.display_name}</h6>
+                        <small class="${statusClass}">
+                            <i class="fas ${statusIcon} me-1"></i>
+                            ${info.configured ? 'Configured' : 'Not configured'}
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+        $('#providerCards').html(html);
+    });
+
+    // Load health
+    $.get('/api/health').done(function(data) {
+        $('#systemStatus').html(`
+            <div class="row text-center">
+                <div class="col-4">
+                    <div class="display-6 text-success"><i class="fas fa-check-circle"></i></div>
+                    <small class="text-muted">API Status</small>
+                </div>
+                <div class="col-4">
+                    <div class="display-6 fw-bold text-primary">${data.configured_providers}</div>
+                    <small class="text-muted">Providers Ready</small>
+                </div>
+                <div class="col-4">
+                    <div class="display-6 fw-bold text-danger">${data.vulnerabilities}</div>
+                    <small class="text-muted">Vulnerabilities</small>
+                </div>
+            </div>
+        `);
+    }).fail(function() {
+        $('#systemStatus').html(`
+            <div class="text-center text-danger py-3">
+                <i class="fas fa-exclamation-triangle me-2"></i> System offline
+            </div>
+        `);
+    });
+});
+</script>
+{% endblock %}

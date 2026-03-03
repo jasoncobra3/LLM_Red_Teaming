@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}Attack Lab - LLM Red Teaming{% endblock %}
+{% block nav_attack %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .vuln-checkbox, .attack-checkbox {
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+        transition: all 0.15s;
+        font-size: 0.875rem;
+        display: inline-block;
+        margin: 3px;
+    }
+    .vuln-checkbox:hover { border-color: var(--red-team-color); background: rgba(220,53,69,0.05); }
+    .attack-checkbox:hover { border-color: var(--target-color); background: rgba(13,110,253,0.05); }
+    .vuln-checkbox.selected {
+        background: rgba(220,53,69,0.1);
+        border-color: var(--red-team-color);
+        color: var(--red-team-color);
+        font-weight: 600;
+    }
+    .attack-checkbox.selected {
+        background: rgba(13,110,253,0.1);
+        border-color: var(--target-color);
+        color: var(--target-color);
+        font-weight: 600;
+    }
+    .model-config-card {
+        border-left: 4px solid;
+    }
+    .model-config-card.attacker { border-left-color: var(--red-team-color); }
+    .model-config-card.target { border-left-color: var(--target-color); }
+    #scanProgress {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4 fade-in">
+    <div class="col">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2>
+                <i class="fas fa-crosshairs text-danger me-3"></i>
+                Attack Lab
+            </h2>
+            <a href="/dashboard" class="btn btn-outline-secondary">
+                <i class="fas fa-history me-2"></i> View Past Scans
+            </a>
+        </div>
+        <p class="text-muted">Configure and launch adversarial red-team scans against your target LLMs.</p>
+        
+        {% set has_configured = namespace(value=false) %}
+        {% for pid, info in providers.items() %}
+            {% if info.configured %}
+                {% set has_configured.value = true %}
+            {% endif %}
+        {% endfor %}
+        {% if not has_configured.value %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>No LLM providers configured!</strong> 
+            Please add at least one API key in <a href="/config" class="alert-link">Configuration</a> before running attacks.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Scan Configuration Form -->
+<form id="scanForm" onsubmit="return false;">
+
+<!-- Row 1: Model Configuration -->
+<div class="row mb-4 g-4 fade-in">
+    <!-- Attacker Model -->
+    <div class="col-md-6">
+        <div class="card model-config-card attacker h-100">
+            <div class="card-header card-header-red">
+                <h5 class="mb-0">
+                    <i class="fas fa-crosshairs text-danger me-2"></i>
+                    Attacker Model (Red Team)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Provider</label>
+                    <select class="form-select" id="attackerProvider" onchange="updateModels('attacker')">
+                        <option value="">-- Select Provider --</option>
+                        {% for pid, info in providers.items() %}
+                        <option value="{{ pid }}" {{ 'disabled' if not info.configured }}
+                                data-models='{{ info.default_models | tojson }}'>
+                            {{ info.display_name }} {{ '✓' if info.configured else '(not configured)' }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Model</label>
+                    <select class="form-select" id="attackerModel">
+                        <option value="">-- Select provider first --</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Custom Model Name <small class="text-muted">(optional)</small></label>
+                    <input type="text" class="form-control" id="attackerCustomModel"
+                           placeholder="e.g. gpt-4o-2024-08-06">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Target Model -->
+    <div class="col-md-6">
+        <div class="card model-config-card target h-100">
+            <div class="card-header card-header-blue">
+                <h5 class="mb-0">
+                    <i class="fas fa-shield-alt text-primary me-2"></i>
+                    Target Model (Defender)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Provider</label>
+                    <select class="form-select" id="targetProvider" onchange="updateModels('target')">
+                        <option value="">-- Select Provider --</option>
+                        {% for pid, info in providers.items() %}
+                        <option value="{{ pid }}" {{ 'disabled' if not info.configured }}
+                                data-models='{{ info.default_models | tojson }}'>
+                            {{ info.display_name }} {{ '✓' if info.configured else '(not configured)' }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Model</label>
+                    <select class="form-select" id="targetModel">
+                        <option value="">-- Select provider first --</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Custom Model Name <small class="text-muted">(optional)</small></label>
+                    <input type="text" class="form-control" id="targetCustomModel"
+                           placeholder="e.g. claude-sonnet-4-20250514">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: Scan Settings -->
+<div class="row mb-4 g-4 fade-in">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i> Scan Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Scan Name</label>
+                        <input type="text" class="form-control" id="scanName"
+                               placeholder="e.g. GPT-4o Safety Audit" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold">Target Purpose</label>
+                        <input type="text" class="form-control" id="targetPurpose"
+                               placeholder="e.g. Customer support chatbot">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Attacks per Vulnerability</label>
+                        <input type="number" class="form-control" id="attacksPerVuln"
+                               value="5" min="1" max="50">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Compliance Framework</label>
+                        <select class="form-select" id="framework">
+                            <option value="">None (Custom)</option>
+                            {% for fid, fname in frameworks.items() %}
+                            <option value="{{ fid }}">{{ fname }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-semibold">Mode</label>
+                        <select class="form-select" id="scanMode">
+                            <option value="custom">Custom Selection</option>
+                            <option value="framework">Framework Only</option>
+                            <option value="all">All Vulnerabilities</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i> Scan Info</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <small class="text-muted d-block">Selected Vulnerabilities</small>
+                    <span class="fs-4 fw-bold text-danger" id="selectedVulnCount">0</span>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted d-block">Selected Attacks</small>
+                    <span class="fs-4 fw-bold text-primary" id="selectedAtkCount">0</span>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted d-block">Estimated Tests</small>
+                    <span class="fs-4 fw-bold text-success" id="estimatedTests">0</span>
+                </div>
+                <hr>
+                <button type="button" class="btn btn-red-team w-100 btn-lg" onclick="launchScan()" id="launchBtn">
+                    <i class="fas fa-rocket me-2"></i> Launch Scan
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 3: Vulnerability Selection -->
+<div class="row mb-4 fade-in" id="vulnSection">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-bug text-danger me-2"></i>
+                    Vulnerabilities
+                    <small class="text-muted">(31 available)</small>
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-danger me-1" onclick="selectAllVulns()">Select All</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearAllVulns()">Clear All</button>
+                </div>
+            </div>
+            <div class="card-body">
+                {% for cat, vulns in vuln_categories.items() %}
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-folder me-1"></i> {{ cat }}
+                    </h6>
+                    <div class="d-flex flex-wrap">
+                        {% for v in vulns %}
+                        <div class="vuln-checkbox" data-id="{{ v.id }}" onclick="toggleVuln(this)">
+                            {{ v.name }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 4: Attack Selection -->
+<div class="row mb-4 fade-in" id="atkSection">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt text-primary me-2"></i>
+                    Attacks
+                    <small class="text-muted">(21 available)</small>
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary me-1" onclick="selectAllAtks()">Select All</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearAllAtks()">Clear All</button>
+                </div>
+            </div>
+            <div class="card-body">
+                {% for cat, atks in attack_categories.items() %}
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-layer-group me-1"></i>
+                        {{ 'Single-Turn Attacks' if cat == 'single_turn' else 'Multi-Turn Attacks' }}
+                    </h6>
+                    <div class="d-flex flex-wrap">
+                        {% for a in atks %}
+                        <div class="attack-checkbox" data-id="{{ a.id }}" onclick="toggleAtk(this)">
+                            {{ a.name }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+</form>
+
+<!-- Scan Progress (shown when scan is running) -->
+<div id="scanProgress" class="row mb-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h5 class="mb-0">
+                    <i class="fas fa-spinner fa-spin me-2"></i>
+                    Scan In Progress
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 24px;">
+                    <div class="progress-bar progress-bar-custom progress-bar-striped progress-bar-animated"
+                         id="progressBar" style="width: 0%;">
+                        Starting...
+                    </div>
+                </div>
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Status</h6>
+                        <span class="badge bg-info fs-6" id="scanStatus">Starting</span>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Scan ID</h6>
+                        <span class="fw-bold" id="scanIdDisplay">--</span>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Elapsed</h6>
+                        <span class="fw-bold" id="scanElapsed">0s</span>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Actions</h6>
+                        <a href="#" class="btn btn-sm btn-outline-primary" id="viewResultsBtn" style="display:none;">
+                            <i class="fas fa-eye me-1"></i> View Results
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// State
+let selectedVulns = new Set();
+let selectedAtks = new Set();
+let pollInterval = null;
+let scanStartTime = null;
+
+// Update model dropdown when provider changes
+function updateModels(role) {
+    const sel = document.getElementById(role === 'attacker' ? 'attackerProvider' : 'targetProvider');
+    const modelSel = document.getElementById(role === 'attacker' ? 'attackerModel' : 'targetModel');
+    const opt = sel.options[sel.selectedIndex];
+
+    modelSel.innerHTML = '<option value="">-- Select Model --</option>';
+    if (opt && opt.dataset.models) {
+        try {
+            const models = JSON.parse(opt.dataset.models);
+            models.forEach(m => {
+                modelSel.innerHTML += `<option value="${m}">${m}</option>`;
+            });
+        } catch(e) {}
+    }
+}
+
+// Vulnerability toggle
+function toggleVuln(el) {
+    const id = el.dataset.id;
+    if (selectedVulns.has(id)) {
+        selectedVulns.delete(id);
+        el.classList.remove('selected');
+    } else {
+        selectedVulns.add(id);
+        el.classList.add('selected');
+    }
+    updateCounts();
+}
+
+function selectAllVulns() {
+    document.querySelectorAll('.vuln-checkbox').forEach(el => {
+        selectedVulns.add(el.dataset.id);
+        el.classList.add('selected');
+    });
+    updateCounts();
+}
+
+function clearAllVulns() {
+    document.querySelectorAll('.vuln-checkbox').forEach(el => {
+        selectedVulns.delete(el.dataset.id);
+        el.classList.remove('selected');
+    });
+    updateCounts();
+}
+
+// Attack toggle
+function toggleAtk(el) {
+    const id = el.dataset.id;
+    if (selectedAtks.has(id)) {
+        selectedAtks.delete(id);
+        el.classList.remove('selected');
+    } else {
+        selectedAtks.add(id);
+        el.classList.add('selected');
+    }
+    updateCounts();
+}
+
+function selectAllAtks() {
+    document.querySelectorAll('.attack-checkbox').forEach(el => {
+        selectedAtks.add(el.dataset.id);
+        el.classList.add('selected');
+    });
+    updateCounts();
+}
+
+function clearAllAtks() {
+    document.querySelectorAll('.attack-checkbox').forEach(el => {
+        selectedAtks.delete(el.dataset.id);
+        el.classList.remove('selected');
+    });
+    updateCounts();
+}
+
+function updateCounts() {
+    const vc = selectedVulns.size;
+    const ac = selectedAtks.size;
+    const apv = parseInt($('#attacksPerVuln').val()) || 5;
+    $('#selectedVulnCount').text(vc);
+    $('#selectedAtkCount').text(ac);
+    $('#estimatedTests').text(vc > 0 ? vc * apv : '—');
+}
+
+// Launch scan
+async function launchScan() {
+    // Validate
+    const attackerProvider = $('#attackerProvider').val();
+    const attackerModel = $('#attackerCustomModel').val() || $('#attackerModel').val();
+    const targetProvider = $('#targetProvider').val();
+    const targetModel = $('#targetCustomModel').val() || $('#targetModel').val();
+    const scanName = $('#scanName').val().trim();
+
+    if (!attackerProvider || !attackerModel) {
+        showToast('Please select an attacker provider and model', 'error');
+        return;
+    }
+    if (!targetProvider || !targetModel) {
+        showToast('Please select a target provider and model', 'error');
+        return;
+    }
+    if (!scanName) {
+        showToast('Please enter a scan name', 'error');
+        return;
+    }
+
+    const fw = $('#framework').val();
+    const mode = $('#scanMode').val();
+
+    // Build payload
+    const payload = {
+        scan_name: scanName,
+        attacker_provider: attackerProvider,
+        attacker_model: attackerModel,
+        target_provider: targetProvider,
+        target_model: targetModel,
+        target_purpose: $('#targetPurpose').val(),
+        attacks_per_vuln: parseInt($('#attacksPerVuln').val()) || 5,
+    };
+
+    if (fw) payload.framework = fw;
+    if (mode === 'custom') {
+        if (selectedVulns.size > 0) payload.vulnerabilities = Array.from(selectedVulns);
+        if (selectedAtks.size > 0) payload.attacks = Array.from(selectedAtks);
+    }
+
+    // Disable button
+    $('#launchBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i> Launching...');
+
+    try {
+        const resp = await fetch('/api/scans', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            showToast('Scan launched successfully!', 'success');
+            showProgress(data.scan_id);
+        } else {
+            showToast(data.detail || 'Failed to launch scan', 'error');
+            $('#launchBtn').prop('disabled', false).html('<i class="fas fa-rocket me-2"></i> Launch Scan');
+        }
+    } catch(e) {
+        showToast('Network error: ' + e.message, 'error');
+        $('#launchBtn').prop('disabled', false).html('<i class="fas fa-rocket me-2"></i> Launch Scan');
+    }
+}
+
+// Show scan progress
+function showProgress(scanId) {
+    scanStartTime = Date.now();
+    $('#scanProgress').show();
+    $('#scanIdDisplay').text('#' + scanId);
+    $('#viewResultsBtn').attr('href', '/results/' + scanId).hide();
+    $('#scanForm').find('input,select,button').not('#launchBtn').prop('disabled', true);
+
+    // Poll for status
+    pollInterval = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/scans/' + scanId);
+            const data = await resp.json();
+
+            // Update elapsed time
+            const elapsed = Math.round((Date.now() - scanStartTime) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            $('#scanElapsed').text(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+
+            if (data.status === 'running') {
+                $('#scanStatus').removeClass().addClass('badge bg-info fs-6').text('Running');
+                $('#progressBar').css('width', '50%').text('Running...');
+            } else if (data.status === 'completed') {
+                clearInterval(pollInterval);
+                $('#scanStatus').removeClass().addClass('badge bg-success fs-6').text('Completed');
+                $('#progressBar').removeClass('progress-bar-animated').css('width', '100%').text('Completed!');
+                $('#viewResultsBtn').show();
+                showToast('Scan completed! ' + data.total_tests + ' tests run.', 'success');
+                resetForm();
+            } else if (data.status === 'failed') {
+                clearInterval(pollInterval);
+                $('#scanStatus').removeClass().addClass('badge bg-danger fs-6').text('Failed');
+                $('#progressBar').removeClass('progress-bar-animated progress-bar-custom')
+                    .addClass('bg-danger').css('width', '100%').text('Failed');
+                showToast('Scan failed. Check logs for details.', 'error');
+                resetForm();
+            }
+        } catch(e) {
+            console.error('Poll error:', e);
+        }
+    }, 3000);
+}
+
+function resetForm() {
+    $('#launchBtn').prop('disabled', false).html('<i class="fas fa-rocket me-2"></i> Launch Scan');
+    $('#scanForm').find('input,select,button').prop('disabled', false);
+}
+
+// Mode change
+$('#scanMode').on('change', function() {
+    const mode = $(this).val();
+    if (mode === 'framework') {
+        $('#vulnSection, #atkSection').hide();
+    } else {
+        $('#vulnSection, #atkSection').show();
+    }
+});
+
+$('#attacksPerVuln').on('input', updateCounts);
+
+// Init
+$(document).ready(function() {
+    updateCounts();
+});
+</script>
+{% endblock %}

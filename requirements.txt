@@ -1,0 +1,38 @@
+# Core Red Teaming
+deepeval>=3.8
+deepteam>=1.0
+opentelemetry-exporter-otlp-proto-grpc>=1.39
+
+# LLM Providers via LangChain
+langchain>=1.2
+langchain-openai>=0.3
+langchain-anthropic>=0.3
+langchain-google-genai>=2.1
+langchain-aws>=0.2
+langchain-huggingface>=0.1
+langchain-groq>=0.3
+
+# Web UI (FastAPI + Jinja2)
+fastapi>=0.115
+uvicorn>=0.30
+jinja2>=3.1
+python-multipart>=0.0.12
+aiofiles>=24.1
+
+# Database
+sqlalchemy>=2.0
+
+# PDF Reports
+fpdf2>=2.8
+
+# Visualization
+plotly>=6.0
+pandas>=2.2
+
+# Auth
+bcrypt>=4.2
+
+# Utilities
+python-dotenv>=1.0
+pydantic>=2.10
+pydantic-settings>=2.7

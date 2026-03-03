@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block title %}Scan Results #{{ scan_id }}{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .result-card { border-left: 4px solid; transition: all 0.15s; }
+    .result-card.passed { border-left-color: #198754; }
+    .result-card.failed { border-left-color: #dc3545; }
+    .result-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .prompt-text, .response-text {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 0.875rem;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    .prompt-text { border-left: 3px solid var(--red-team-color); }
+    .response-text { border-left: 3px solid var(--target-color); }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="row mb-4 fade-in">
+    <div class="col">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <a href="/dashboard" class="btn btn-sm btn-outline-secondary me-3">
+                    <i class="fas fa-arrow-left me-1"></i> Back
+                </a>
+                <span class="fs-3 fw-bold" id="scanTitle">
+                    <div class="spinner-border spinner-border-sm"></div> Loading...
+                </span>
+            </div>
+            <div class="btn-group" id="exportButtons" style="display:none;">
+                <a href="/api/scans/{{ scan_id }}/report/pdf" class="btn btn-outline-danger">
+                    <i class="fas fa-file-pdf me-1"></i> PDF
+                </a>
+                <a href="/api/scans/{{ scan_id }}/report/csv" class="btn btn-outline-success">
+                    <i class="fas fa-file-csv me-1"></i> CSV
+                </a>
+                <a href="/api/scans/{{ scan_id }}/report/json" class="btn btn-outline-primary">
+                    <i class="fas fa-file-code me-1"></i> JSON
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4 g-3 fade-in" id="summaryRow" style="display:none;">
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="display-6 fw-bold" id="overallScore">--</div>
+                <small class="text-muted">Overall Score</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-primary" id="totalTests">--</div>
+                <small class="text-muted">Total Tests</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-success" id="passedTests">--</div>
+                <small class="text-muted">Passed (Safe)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-danger" id="failedTests">--</div>
+                <small class="text-muted">Failed (Vulnerable)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="fs-5 fw-bold" id="attackerModel">--</div>
+                <small class="text-muted">Attacker</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <div class="fs-5 fw-bold" id="targetModelDisplay">--</div>
+                <small class="text-muted">Target</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scan Metadata -->
+<div class="row mb-4 fade-in" id="metaRow" style="display:none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i> Scan Configuration</h5>
+                <span id="scanStatusBadge"></span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Created</small>
+                        <span id="scanCreated">--</span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Completed</small>
+                        <span id="scanCompleted">--</span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Framework</small>
+                        <span id="scanFramework">--</span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Attacks per Vulnerability</small>
+                        <span id="scanAPV">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter & Results -->
+<div class="row mb-4 fade-in">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>
+                    Test Results
+                </h5>
+                <div class="d-flex gap-2">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary active" data-rfilter="all">All</button>
+                        <button class="btn btn-outline-success" data-rfilter="passed">Passed</button>
+                        <button class="btn btn-outline-danger" data-rfilter="failed">Failed</button>
+                    </div>
+                    <input type="text" class="form-control form-control-sm" id="searchResults"
+                           placeholder="Search..." style="width:200px;">
+                </div>
+            </div>
+            <div class="card-body" id="resultsContainer">
+                <div class="text-center py-4 text-muted">
+                    <div class="spinner-border spinner-border-sm me-2"></div>
+                    Loading results...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const scanId = {{ scan_id|tojson }};
+let allResults = [];
+let currentRFilter = 'all';
+
+$(document).ready(function() {
+    loadScanDetails();
+    loadResults();
+
+    // Filter buttons
+    $('[data-rfilter]').on('click', function() {
+        $('[data-rfilter]').removeClass('active');
+        $(this).addClass('active');
+        currentRFilter = $(this).data('rfilter');
+        renderResults();
+    });
+
+    // Search
+    $('#searchResults').on('input', function() {
+        renderResults();
+    });
+});
+
+async function loadScanDetails() {
+    try {
+        const resp = await fetch(`/api/scans/${scanId}`);
+        if (!resp.ok) throw new Error('Scan not found');
+        const data = await resp.json();
+
+        $('#scanTitle').text(`Scan #${data.id}: ${data.name}`);
+        $('#scanStatusBadge').html(getStatusBadge(data.status));
+
+        // Summary
+        const scoreClass = getScoreBadgeClass(data.overall_score);
+        $('#overallScore').html(`<span class="${scoreClass}" style="padding:4px 12px;border-radius:8px;">${data.overall_score}%</span>`);
+        $('#totalTests').text(data.total_tests);
+        $('#passedTests').text(data.passed);
+        $('#failedTests').text(data.failed);
+        $('#attackerModel').text(`${data.attacker_provider}/${data.attacker_model}`).attr('title', `${data.attacker_provider}/${data.attacker_model}`);
+        $('#targetModelDisplay').text(`${data.target_provider}/${data.target_model}`).attr('title', `${data.target_provider}/${data.target_model}`);
+
+        // Meta
+        $('#scanCreated').text(data.created_at ? new Date(data.created_at).toLocaleString() : '--');
+        $('#scanCompleted').text(data.completed_at ? new Date(data.completed_at).toLocaleString() : '--');
+        $('#scanFramework').text(data.framework || 'Custom');
+        $('#scanAPV').text(data.attacks_per_vuln);
+
+        $('#summaryRow, #metaRow, #exportButtons').show();
+
+        // If running, poll
+        if (data.is_active || data.status === 'running') {
+            setInterval(async () => {
+                const r = await fetch(`/api/scans/${scanId}`);
+                const d = await r.json();
+                if (d.status === 'completed' || d.status === 'failed') {
+                    location.reload();
+                }
+            }, 5000);
+        }
+    } catch(e) {
+        $('#scanTitle').html('<span class="text-danger">Scan not found</span>');
+    }
+}
+
+async function loadResults() {
+    try {
+        const resp = await fetch(`/api/scans/${scanId}/results`);
+        allResults = await resp.json();
+        renderResults();
+    } catch(e) {
+        $('#resultsContainer').html('<div class="text-center text-danger py-4">Error loading results</div>');
+    }
+}
+
+function renderResults() {
+    const search = $('#searchResults').val().toLowerCase();
+    let filtered = allResults;
+
+    // Filter by pass/fail
+    if (currentRFilter === 'passed') filtered = filtered.filter(r => r.passed);
+    if (currentRFilter === 'failed') filtered = filtered.filter(r => !r.passed);
+
+    // Search
+    if (search) {
+        filtered = filtered.filter(r =>
+            (r.vulnerability_type || '').toLowerCase().includes(search) ||
+            (r.attack_type || '').toLowerCase().includes(search) ||
+            (r.input_prompt || '').toLowerCase().includes(search) ||
+            (r.reason || '').toLowerCase().includes(search)
+        );
+    }
+
+    if (filtered.length === 0) {
+        $('#resultsContainer').html(`
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-search me-2"></i>
+                ${allResults.length === 0 ? 'No results yet. Scan may still be running.' : 'No results match your filter.'}
+            </div>
+        `);
+        return;
+    }
+
+    let html = `<small class="text-muted mb-3 d-block">Showing ${filtered.length} of ${allResults.length} results</small>`;
+
+    filtered.forEach((r, i) => {
+        const statusClass = r.passed ? 'passed' : 'failed';
+        const statusIcon = r.passed ? 'fa-check-circle text-success' : 'fa-times-circle text-danger';
+        const statusText = r.passed ? 'PASSED (Safe)' : 'FAILED (Vulnerable)';
+        const collapseId = `result-${r.id}`;
+
+        html += `
+            <div class="card result-card ${statusClass} mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center"
+                     style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                    <div>
+                        <i class="fas ${statusIcon} me-2"></i>
+                        <strong>${r.vulnerability_type || 'N/A'}</strong>
+                        <span class="text-muted mx-2">/</span>
+                        <span>${r.attack_type || 'N/A'}</span>
+                        <span class="badge bg-${r.passed ? 'success' : 'danger'} ms-2">${statusText}</span>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary me-2">Score: ${r.score}</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <div class="collapse" id="${collapseId}">
+                    <div class="card-body">
+                        ${r.reason ? `
+                            <div class="mb-3">
+                                <h6 class="text-muted"><i class="fas fa-comment me-1"></i> Reason</h6>
+                                <p>${escapeHtml(r.reason)}</p>
+                            </div>
+                        ` : ''}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-danger"><i class="fas fa-crosshairs me-1"></i> Attack Prompt</h6>
+                                <div class="prompt-text">${escapeHtml(r.input_prompt || 'N/A')}</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-primary"><i class="fas fa-shield me-1"></i> Target Response</h6>
+                                <div class="response-text">${escapeHtml(r.target_response || 'N/A')}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    $('#resultsContainer').html(html);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,985 @@
+{% extends "base.html" %}
+{% block title %}Custom Attack - LLM Red Teaming Platform{% endblock %}
+{% block nav_custom %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Strategy cards */
+    .strategy-card {
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+    }
+    .strategy-card:hover {
+        border-color: var(--red-team-color);
+        transform: translateY(-2px);
+    }
+    .strategy-card.selected {
+        border-color: var(--red-team-color);
+        background: rgba(220,53,69,0.04);
+        box-shadow: 0 0 0 3px rgba(220,53,69,0.15);
+    }
+
+    /* Phase timeline */
+    .phase-timeline {
+        display: flex;
+        gap: 0;
+        overflow-x: auto;
+        padding: 12px 0;
+    }
+    .phase-step {
+        flex: 1;
+        min-width: 120px;
+        text-align: center;
+        position: relative;
+        padding: 0 8px;
+    }
+    .phase-step::after {
+        content: '';
+        position: absolute;
+        top: 16px;
+        right: -12px;
+        width: 24px;
+        height: 2px;
+        background: #dee2e6;
+    }
+    .phase-step:last-child::after { display: none; }
+    .phase-dot {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #e9ecef;
+        color: #6c757d;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.8rem;
+        margin-bottom: 6px;
+        transition: all 0.3s;
+    }
+    .phase-step.active .phase-dot {
+        background: var(--red-team-color);
+        color: #fff;
+    }
+    .phase-step.completed .phase-dot {
+        background: #198754;
+        color: #fff;
+    }
+    .phase-label {
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: #6c757d;
+        word-break: break-word;
+    }
+    .phase-step.active .phase-label { color: var(--red-team-color); font-weight: 600; }
+    .phase-step.completed .phase-label { color: #198754; }
+
+    /* Conversation display */
+    .conversation-container {
+        max-height: 600px;
+        overflow-y: auto;
+        padding: 16px;
+    }
+    .turn-card {
+        margin-bottom: 16px;
+        border-left: 4px solid transparent;
+    }
+    .turn-card.passed { border-left-color: #198754; }
+    .turn-card.failed { border-left-color: #dc3545; }
+    .turn-card.running { border-left-color: #0dcaf0; }
+
+    .attack-bubble {
+        background: rgba(220,53,69,0.06);
+        border-radius: 12px 12px 12px 0;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+    }
+    .response-bubble {
+        background: rgba(13,110,253,0.06);
+        border-radius: 12px 12px 0 12px;
+        padding: 12px 16px;
+    }
+
+    /* Compliance meter */
+    .compliance-meter {
+        height: 8px;
+        border-radius: 4px;
+        background: #e9ecef;
+        overflow: hidden;
+    }
+    .compliance-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.5s ease;
+    }
+
+    /* Threshold slider styling */
+    .form-range::-webkit-slider-thumb {
+        background: var(--red-team-color);
+    }
+    .form-range::-moz-range-thumb {
+        background: var(--red-team-color);
+    }
+    #thresholdValue {
+        font-weight: 700;
+        font-size: 1.1em;
+    }
+
+    /* Static attack checkboxes */
+    .attack-check-card {
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid #dee2e6;
+    }
+    .attack-check-card:hover {
+        border-color: var(--red-team-color);
+    }
+    .attack-check-card.checked {
+        border-color: var(--red-team-color);
+        background: rgba(220,53,69,0.03);
+    }
+    .severity-critical { color: #dc3545; font-weight: 700; }
+    .severity-high { color: #fd7e14; font-weight: 600; }
+    .severity-medium { color: #ffc107; font-weight: 600; }
+    .severity-low { color: #198754; font-weight: 500; }
+
+    /* Live indicator */
+    .live-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #dc3545;
+        display: inline-block;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">
+                <i class="fas fa-user-secret text-danger me-2"></i>Custom Attack Lab
+            </h2>
+            <p class="text-muted mb-0">
+                Multi-turn adaptive jailbreaking &amp; static prompt injection testing
+            </p>
+        </div>
+        <div>
+            <a href="/attack" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-crosshairs me-1"></i>DeepTeam Lab
+            </a>
+        </div>
+    </div>
+
+    <!-- Mode Tabs -->
+    <ul class="nav nav-pills mb-4" id="modeTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active btn-red-team" id="multi-turn-tab" data-bs-toggle="pill"
+                    data-bs-target="#multiTurnPane" type="button" role="tab">
+                <i class="fas fa-comments me-1"></i>Multi-Turn Adaptive Attack
+            </button>
+        </li>
+        <li class="nav-item ms-2" role="presentation">
+            <button class="nav-link" id="static-tab" data-bs-toggle="pill"
+                    data-bs-target="#staticPane" type="button" role="tab">
+                <i class="fas fa-bolt me-1"></i>Static Attack Library
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+
+        <!-- ============================================================ -->
+        <!-- MULTI-TURN ADAPTIVE ATTACK PANE -->
+        <!-- ============================================================ -->
+        <div class="tab-pane fade show active" id="multiTurnPane" role="tabpanel">
+            <div class="row g-4">
+                <!-- Left: Configuration -->
+                <div class="col-lg-5">
+                    <form id="multiTurnForm">
+
+                        <!-- Model Selection -->
+                        <div class="card mb-3">
+                            <div class="card-header card-header-red">
+                                <i class="fas fa-robot text-danger me-1"></i>Attacker Model
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Provider</label>
+                                        <select class="form-select form-select-sm" id="mtAttackerProvider">
+                                            <option value="">-- Select Provider --</option>
+                                            {% for pid, p in providers.items() %}
+                                            {% if p.configured %}
+                                            <option value="{{ pid }}">{{ p.display_name }}</option>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Model</label>
+                                        <select class="form-select form-select-sm" id="mtAttackerModel">
+                                            <option value="">-- Select Provider First --</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                {% set has_configured = namespace(value=false) %}
+                                {% for pid, p in providers.items() %}
+                                    {% if p.configured %}
+                                        {% set has_configured.value = true %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% if not has_configured.value %}
+                                <div class="alert alert-warning mt-2 mb-0 small">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    No providers configured. Please add API keys in <a href="/config" class="alert-link">Configuration</a>.
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header card-header-blue">
+                                <i class="fas fa-bullseye text-primary me-1"></i>Target Model
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Provider</label>
+                                        <select class="form-select form-select-sm" id="mtTargetProvider">
+                                            <option value="">-- Select Provider --</option>
+                                            {% for pid, p in providers.items() %}
+                                            {% if p.configured %}
+                                            <option value="{{ pid }}">{{ p.display_name }}</option>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Model</label>
+                                        <select class="form-select form-select-sm" id="mtTargetModel">
+                                            <option value="">-- Select Provider First --</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <label class="form-label small fw-semibold">Target System Prompt <span class="text-muted">(optional)</span></label>
+                                    <textarea class="form-control form-control-sm" id="mtSystemPrompt" rows="2"
+                                              placeholder="You are an AI assistant. Respond helpfully to the user's messages."></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Attack Configuration -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <i class="fas fa-sliders-h me-1"></i>Attack Configuration
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label small fw-semibold">Target Topic / Behaviour</label>
+                                    <input type="text" class="form-control form-control-sm" id="mtTopic"
+                                           placeholder="e.g. How to hack into a secure network" required>
+                                    <div class="form-text">The restricted topic the attacker will try to elicit.</div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Max Turns</label>
+                                        <input type="number" class="form-control form-control-sm" id="mtMaxTurns"
+                                               value="10" min="3" max="25">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Scan Name <span class="text-muted">(optional)</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="mtScanName"
+                                               placeholder="Auto-generated">
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label small fw-semibold">
+                                        Compliance Threshold: <span id="thresholdValue" class="text-danger">70%</span>
+                                    </label>
+                                    <input type="range" class="form-range" id="mtComplianceThreshold"
+                                           min="50" max="100" step="5" value="70"
+                                           oninput="updateThresholdDisplay(this.value)">
+                                    <div class="form-text">
+                                        Stop attack if compliance exceeds this threshold (indicates jailbreak success).
+                                        <span class="text-muted">Lower = more strict, Higher = more lenient</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Strategy Selection -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <i class="fas fa-chess me-1"></i>Jailbreaking Strategy
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-2" id="strategyGrid">
+                                    {% for s in strategies %}
+                                    <div class="col-6">
+                                        <div class="card strategy-card p-2" data-strategy="{{ s.id }}"
+                                             onclick="selectStrategy('{{ s.id }}')">
+                                            <div class="fw-semibold small">{{ s.display_name }}</div>
+                                            <div class="text-muted" style="font-size:0.7rem">
+                                                {{ s.phases }} phases &bull; {{ s.description[:60] }}...
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <input type="hidden" id="mtStrategy" required>
+
+                                <!-- Phase Preview -->
+                                <div id="phasePreview" class="mt-3 d-none">
+                                    <label class="form-label small fw-semibold">Phase Progression</label>
+                                    <div class="phase-timeline" id="phaseTimeline"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-red-team w-100 py-2" id="mtLaunchBtn">
+                            <i class="fas fa-rocket me-2"></i>Launch Multi-Turn Attack
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Live Conversation -->
+                <div class="col-lg-7">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="fas fa-comments me-1"></i>Live Conversation
+                                <span id="liveIndicator" class="ms-2 d-none">
+                                    <span class="live-dot"></span>
+                                    <span class="text-danger small fw-semibold ms-1">LIVE</span>
+                                </span>
+                            </div>
+                            <div>
+                                <span id="turnCounter" class="badge bg-secondary">0 / 0 turns</span>
+                                <button class="btn btn-sm btn-outline-danger ms-2 d-none" id="stopBtn"
+                                        onclick="stopAttack()">
+                                    <i class="fas fa-stop me-1"></i>Stop
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <!-- Phase timeline (live) -->
+                            <div class="px-3 pt-3 d-none" id="livePhaseArea">
+                                <div class="phase-timeline" id="livePhaseTimeline"></div>
+                            </div>
+
+                            <div class="conversation-container" id="conversationArea">
+                                <div class="text-center text-muted py-5" id="conversationPlaceholder">
+                                    <i class="fas fa-user-secret fa-3x mb-3 d-block opacity-25"></i>
+                                    <p>Configure and launch a multi-turn attack to see the live conversation here.</p>
+                                </div>
+                            </div>
+
+                            <!-- Summary (shown after completion) -->
+                            <div class="p-3 border-top d-none" id="attackSummary">
+                                <div class="row g-3 text-center">
+                                    <div class="col-3">
+                                        <div class="fw-bold fs-5" id="sumTurns">-</div>
+                                        <div class="text-muted small">Turns</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="fw-bold fs-5" id="sumCompliance">-</div>
+                                        <div class="text-muted small">Compliance%</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="fw-bold fs-5" id="sumThreshold">-</div>
+                                        <div class="text-muted small">Threshold</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="fw-bold fs-5" id="sumJailbreak">-</div>
+                                        <div class="text-muted small">Jailbreak?</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ============================================================ -->
+        <!-- STATIC ATTACK LIBRARY PANE -->
+        <!-- ============================================================ -->
+        <div class="tab-pane fade" id="staticPane" role="tabpanel">
+            <div class="row g-4">
+                <!-- Left: Configuration -->
+                <div class="col-lg-4">
+                    <form id="staticForm">
+                        <div class="card mb-3">
+                            <div class="card-header card-header-blue">
+                                <i class="fas fa-bullseye text-primary me-1"></i>Target Model
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Provider</label>
+                                        <select class="form-select form-select-sm" id="saTargetProvider">
+                                            <option value="">-- Select Provider --</option>
+                                            {% for pid, p in providers.items() %}
+                                            {% if p.configured %}
+                                            <option value="{{ pid }}">{{ p.display_name }}</option>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-semibold">Model</label>
+                                        <select class="form-select form-select-sm" id="saTargetModel">
+                                            <option value="">-- Select Provider First --</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                {% set has_configured = namespace(value=false) %}
+                                {% for pid, p in providers.items() %}
+                                    {% if p.configured %}
+                                        {% set has_configured.value = true %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% if not has_configured.value %}
+                                <div class="alert alert-warning mt-2 mb-0 small">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    No providers configured. Please add API keys in <a href="/config" class="alert-link">Configuration</a>.
+                                </div>
+                                {% endif %}
+                                <div class="mt-2">
+                                    <label class="form-label small fw-semibold">Target System Prompt <span class="text-muted">(optional)</span></label>
+                                    <textarea class="form-control form-control-sm" id="saSystemPrompt" rows="2"
+                                              placeholder="You are an AI assistant."></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <i class="fas fa-check-double me-1"></i>Quick Select
+                            </div>
+                            <div class="card-body">
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            onclick="selectByCategory('prompt_injection')">All Prompt Injection</button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning"
+                                            onclick="selectByCategory('jailbreaking')">All Jailbreaking</button>
+                                    <button type="button" class="btn btn-sm btn-outline-dark"
+                                            onclick="selectAll()">Select All</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            onclick="clearAll()">Clear All</button>
+                                </div>
+                                <div class="mt-2">
+                                    <span class="small text-muted">Selected: <strong id="selectedCount">0</strong> attacks</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-red-team w-100 py-2" id="saLaunchBtn">
+                            <i class="fas fa-bolt me-2"></i>Run Static Attacks
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Attack Library Grid -->
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-book-skull me-1"></i>Attack Library</span>
+                            <input type="text" class="form-control form-control-sm w-auto" id="saSearchBox"
+                                   placeholder="Search attacks..." style="max-width:200px">
+                        </div>
+                        <div class="card-body" style="max-height:600px; overflow-y:auto">
+                            {% for cat, techniques in static_attacks.items() %}
+                            <h6 class="text-uppercase text-muted mb-2 mt-3">
+                                <i class="fas fa-{{ 'syringe' if cat == 'prompt_injection' else 'unlock-keyhole' }} me-1"></i>
+                                {{ cat | replace('_', ' ') | title }}
+                            </h6>
+                            {% for tech, attacks in techniques.items() %}
+                            <div class="mb-2">
+                                <small class="text-muted fw-semibold">{{ tech | replace('_', ' ') | title }}</small>
+                            </div>
+                            {% for a in attacks %}
+                            <div class="card attack-check-card mb-2 p-2" data-attack-id="{{ a.id }}"
+                                 data-category="{{ cat }}" onclick="toggleAttack(this, '{{ a.id }}')">
+                                <div class="d-flex align-items-start">
+                                    <input type="checkbox" class="form-check-input me-2 mt-1 sa-check"
+                                           data-id="{{ a.id }}" data-category="{{ cat }}">
+                                    <div class="flex-grow-1">
+                                        <div class="fw-semibold small">{{ a.display_name }}
+                                            <span class="severity-{{ a.severity }} small ms-1">[{{ a.severity | upper }}]</span>
+                                        </div>
+                                        <div class="text-muted" style="font-size:0.72rem">{{ a.description }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                            {% endfor %}
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Static Results -->
+                    <div class="card mt-3 d-none" id="staticResultsCard">
+                        <div class="card-header card-header-green">
+                            <i class="fas fa-chart-bar me-1"></i>Static Attack Results
+                        </div>
+                        <div class="card-body" id="staticResultsBody">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /tab-content -->
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+    // Provider model data
+    const providers = {{ providers | tojson }};
+    const strategyDetails = {{ strategy_details | tojson }};
+
+    // State
+    let activeScanId = null;
+    let pollInterval = null;
+    let selectedAttacks = new Set();
+
+    // ================================================================
+    // Model Dropdown Populator
+    // ================================================================
+    function populateModels(providerSelect, modelSelect) {
+        const pid = $(providerSelect).val();
+        const models = providers[pid]?.default_models || [];
+        $(modelSelect).empty();
+        
+        if (!pid) {
+            $(modelSelect).append('<option value="">-- Select Provider First --</option>');
+        } else if (models.length === 0) {
+            $(modelSelect).append('<option value="">-- No Models Available --</option>');
+        } else {
+            $(modelSelect).append('<option value="">-- Select Model --</option>');
+            models.forEach(m => $(modelSelect).append(`<option value="${m}">${m}</option>`));
+        }
+    }
+
+    // Wire up all dropdowns
+    $('#mtAttackerProvider').on('change', function() { populateModels(this, '#mtAttackerModel'); });
+    $('#mtTargetProvider').on('change', function() { populateModels(this, '#mtTargetModel'); });
+    $('#saTargetProvider').on('change', function() { populateModels(this, '#saTargetModel'); });
+
+    // Init - only populate if provider has a value
+    if ($('#mtAttackerProvider').val()) {
+        populateModels('#mtAttackerProvider', '#mtAttackerModel');
+    }
+    if ($('#mtTargetProvider').val()) {
+        populateModels('#mtTargetProvider', '#mtTargetModel');
+    }
+    if ($('#saTargetProvider').val()) {
+        populateModels('#saTargetProvider', '#saTargetModel');
+    }
+
+
+    // ================================================================
+    // Strategy Selection
+    // ================================================================
+    function updateThresholdDisplay(value) {
+        $('#thresholdValue').text(value + '%');
+    }
+
+    function selectStrategy(strategyId) {
+        $('#mtStrategy').val(strategyId);
+        $('.strategy-card').removeClass('selected');
+        $(`.strategy-card[data-strategy="${strategyId}"]`).addClass('selected');
+
+        // Show phase preview
+        const detail = strategyDetails[strategyId];
+        if (detail) {
+            let html = '';
+            detail.phases.forEach((p, i) => {
+                html += `
+                    <div class="phase-step">
+                        <div class="phase-dot">${i + 1}</div>
+                        <div class="phase-label">${p.name.replace(/_/g, ' ')}</div>
+                    </div>`;
+            });
+            $('#phaseTimeline').html(html);
+            $('#phasePreview').removeClass('d-none');
+        }
+    }
+
+
+    // ================================================================
+    // Multi-Turn Attack
+    // ================================================================
+    $('#multiTurnForm').on('submit', function(e) {
+        e.preventDefault();
+
+        const strategy = $('#mtStrategy').val();
+        if (!strategy) {
+            showToast('Please select a jailbreaking strategy', 'warning');
+            return;
+        }
+        const topic = $('#mtTopic').val().trim();
+        if (!topic) {
+            showToast('Please enter a target topic', 'warning');
+            return;
+        }
+
+        const payload = {
+            attacker_provider: $('#mtAttackerProvider').val(),
+            attacker_model: $('#mtAttackerModel').val(),
+            target_provider: $('#mtTargetProvider').val(),
+            target_model: $('#mtTargetModel').val(),
+            strategy_id: strategy,
+            topic: topic,
+            max_turns: parseInt($('#mtMaxTurns').val()) || 10,
+            compliance_threshold: parseInt($('#mtComplianceThreshold').val()) || 70,
+            scan_name: $('#mtScanName').val().trim() || null,
+            target_system_prompt: $('#mtSystemPrompt').val().trim() || '',
+        };
+
+        // UI state
+        $('#mtLaunchBtn').prop('disabled', true).html(
+            '<span class="spinner-border spinner-border-sm me-2"></span>Launching...');
+
+        $.ajax({
+            url: '/api/custom_attack',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(resp) {
+                activeScanId = resp.scan_id;
+                showToast('Custom attack launched!', 'success');
+
+                // Show live UI
+                $('#conversationPlaceholder').addClass('d-none');
+                $('#liveIndicator').removeClass('d-none');
+                $('#stopBtn').removeClass('d-none');
+                $('#livePhaseArea').removeClass('d-none');
+                $('#attackSummary').addClass('d-none');
+                $('#conversationArea').html('');
+
+                // Build live phase timeline
+                const detail = strategyDetails[strategy];
+                if (detail) {
+                    let html = '';
+                    detail.phases.forEach((p, i) => {
+                        html += `
+                            <div class="phase-step" id="livePhase${i}">
+                                <div class="phase-dot">${i + 1}</div>
+                                <div class="phase-label">${p.name.replace(/_/g, ' ')}</div>
+                            </div>`;
+                    });
+                    $('#livePhaseTimeline').html(html);
+                }
+
+                // Start polling
+                startPolling();
+            },
+            error: function(xhr) {
+                showToast('Failed to launch: ' + (xhr.responseJSON?.detail || xhr.statusText), 'error');
+                $('#mtLaunchBtn').prop('disabled', false).html(
+                    '<i class="fas fa-rocket me-2"></i>Launch Multi-Turn Attack');
+            }
+        });
+    });
+
+
+    function startPolling() {
+        let lastTurnCount = 0;
+
+        pollInterval = setInterval(function() {
+            if (!activeScanId) { clearInterval(pollInterval); return; }
+
+            $.getJSON(`/api/scans/${activeScanId}/conversation`, function(data) {
+                const turns = data.turns || [];
+                const maxTurns = data.max_turns || '?';
+                const currentTurn = data.current_turn || turns.length;
+                const status = data.status;
+
+                $('#turnCounter').text(`${currentTurn} / ${maxTurns} turns`);
+
+                // Render new turns
+                if (turns.length > lastTurnCount) {
+                    for (let i = lastTurnCount; i < turns.length; i++) {
+                        renderTurn(turns[i]);
+                    }
+                    lastTurnCount = turns.length;
+
+                    // Scroll to bottom
+                    const container = document.getElementById('conversationArea');
+                    container.scrollTop = container.scrollHeight;
+
+                    // Update phase timeline
+                    updateLivePhases(currentTurn);
+                }
+
+                // Check if done
+                if (['completed', 'jailbreak_detected', 'failed', 'stopped'].includes(status)) {
+                    clearInterval(pollInterval);
+                    onAttackComplete(data);
+                }
+            });
+        }, 2000);
+    }
+
+
+    function renderTurn(turn) {
+        const complianceColor = turn.compliance_level > 70 ? '#dc3545' :
+                                turn.compliance_level > 40 ? '#ffc107' : '#198754';
+        const statusClass = turn.jailbreak_achieved ? 'failed' : 'passed';
+
+        const html = `
+            <div class="turn-card card ${statusClass} fade-in">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-dark">Turn ${turn.turn_number}</span>
+                        <span class="badge" style="background:${complianceColor}">
+                            Compliance: ${turn.compliance_level}%
+                        </span>
+                    </div>
+                    <div class="attack-bubble mb-2">
+                        <div class="d-flex align-items-center mb-1">
+                            <i class="fas fa-user-secret text-danger me-1"></i>
+                            <small class="fw-semibold text-danger">Attacker</small>
+                            <small class="text-muted ms-2">${turn.phase || ''}</small>
+                        </div>
+                        <div class="small">${escapeHtml(turn.attack_prompt)}</div>
+                    </div>
+                    <div class="response-bubble">
+                        <div class="d-flex align-items-center mb-1">
+                            <i class="fas fa-bullseye text-primary me-1"></i>
+                            <small class="fw-semibold text-primary">Target</small>
+                            ${turn.jailbreak_achieved ?
+                                '<span class="badge bg-danger ms-2 small">JAILBREAK</span>' : ''}
+                        </div>
+                        <div class="small">${escapeHtml(turn.target_response)}</div>
+                    </div>
+                    <div class="compliance-meter mt-2">
+                        <div class="compliance-fill" style="width:${turn.compliance_level}%;background:${complianceColor}"></div>
+                    </div>
+                </div>
+            </div>`;
+        $('#conversationArea').append(html);
+    }
+
+
+    function updateLivePhases(currentTurn) {
+        const strategy = $('#mtStrategy').val();
+        const detail = strategyDetails[strategy];
+        if (!detail) return;
+
+        detail.phases.forEach((p, i) => {
+            const el = $(`#livePhase${i}`);
+            el.removeClass('active completed');
+            // Determine which phase this turn maps to
+            const phaseIdx = Math.min(currentTurn - 1, detail.phases.length - 1);
+            if (i < phaseIdx) el.addClass('completed');
+            else if (i === phaseIdx) el.addClass('active');
+        });
+    }
+
+
+    function onAttackComplete(data) {
+        $('#liveIndicator').addClass('d-none');
+        $('#stopBtn').addClass('d-none');
+        $('#mtLaunchBtn').prop('disabled', false).html(
+            '<i class="fas fa-rocket me-2"></i>Launch Multi-Turn Attack');
+
+        const turns = data.turns || [];
+        const lastTurn = turns[turns.length - 1] || {};
+        const jb = turns.some(t => t.jailbreak_achieved);
+        const threshold = parseInt($('#mtComplianceThreshold').val()) || 70;
+
+        $('#sumTurns').text(turns.length);
+        $('#sumCompliance').text((lastTurn.compliance_level || 0) + '%');
+        $('#sumThreshold').html(`<span class="text-warning">${threshold}%</span>`);
+        $('#sumJailbreak').html(jb ?
+            '<span class="text-danger">YES</span>' :
+            '<span class="text-success">NO</span>');
+        $('#attackSummary').removeClass('d-none');
+
+        showToast(`Attack finished: ${data.status}. ${turns.length} turns.`,
+                  jb ? 'warning' : 'success');
+    }
+
+
+    function stopAttack() {
+        if (!activeScanId) return;
+        $.post(`/api/custom_attack/${activeScanId}/stop`);
+        showToast('Stop requested. Finishing current turn...', 'info');
+    }
+
+
+    // ================================================================
+    // Static Attack Library
+    // ================================================================
+    function toggleAttack(el, attackId) {
+        const cb = $(el).find('input[type=checkbox]');
+        const checked = !cb.prop('checked');
+        cb.prop('checked', checked);
+        $(el).toggleClass('checked', checked);
+
+        if (checked) selectedAttacks.add(attackId);
+        else selectedAttacks.delete(attackId);
+
+        $('#selectedCount').text(selectedAttacks.size);
+    }
+
+    function selectByCategory(cat) {
+        $(`.attack-check-card[data-category="${cat}"]`).each(function() {
+            const id = $(this).data('attack-id');
+            $(this).find('input').prop('checked', true);
+            $(this).addClass('checked');
+            selectedAttacks.add(id);
+        });
+        $('#selectedCount').text(selectedAttacks.size);
+    }
+
+    function selectAll() {
+        $('.attack-check-card').each(function() {
+            const id = $(this).data('attack-id');
+            $(this).find('input').prop('checked', true);
+            $(this).addClass('checked');
+            selectedAttacks.add(id);
+        });
+        $('#selectedCount').text(selectedAttacks.size);
+    }
+
+    function clearAll() {
+        selectedAttacks.clear();
+        $('.attack-check-card').each(function() {
+            $(this).find('input').prop('checked', false);
+            $(this).removeClass('checked');
+        });
+        $('#selectedCount').text(0);
+    }
+
+    // Search filter
+    $('#saSearchBox').on('input', function() {
+        const q = $(this).val().toLowerCase();
+        $('.attack-check-card').each(function() {
+            const text = $(this).text().toLowerCase();
+            $(this).toggle(text.includes(q));
+        });
+    });
+
+    $('#staticForm').on('submit', function(e) {
+        e.preventDefault();
+
+        if (selectedAttacks.size === 0) {
+            showToast('Please select at least one attack', 'warning');
+            return;
+        }
+
+        const payload = {
+            target_provider: $('#saTargetProvider').val(),
+            target_model: $('#saTargetModel').val(),
+            attack_ids: Array.from(selectedAttacks),
+            target_system_prompt: $('#saSystemPrompt').val().trim() || '',
+        };
+
+        $('#saLaunchBtn').prop('disabled', true).html(
+            '<span class="spinner-border spinner-border-sm me-2"></span>Running...');
+
+        $.ajax({
+            url: '/api/static_attack',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(payload),
+            success: function(resp) {
+                showToast(`Static attack started! Scan ID: ${resp.scan_id}`, 'success');
+                pollStaticResults(resp.scan_id);
+            },
+            error: function(xhr) {
+                showToast('Failed: ' + (xhr.responseJSON?.detail || xhr.statusText), 'error');
+                $('#saLaunchBtn').prop('disabled', false).html(
+                    '<i class="fas fa-bolt me-2"></i>Run Static Attacks');
+            }
+        });
+    });
+
+    function pollStaticResults(scanId) {
+        const interval = setInterval(function() {
+            $.getJSON(`/api/scans/${scanId}`, function(scan) {
+                if (['completed', 'failed'].includes(scan.status)) {
+                    clearInterval(interval);
+                    $('#saLaunchBtn').prop('disabled', false).html(
+                        '<i class="fas fa-bolt me-2"></i>Run Static Attacks');
+
+                    // Fetch results
+                    $.getJSON(`/api/scans/${scanId}/results`, function(results) {
+                        renderStaticResults(scan, results);
+                    });
+                }
+            });
+        }, 2000);
+    }
+
+    function renderStaticResults(scan, results) {
+        let html = `
+            <div class="row g-3 mb-3 text-center">
+                <div class="col-3">
+                    <div class="fw-bold fs-5">${scan.total_tests}</div>
+                    <div class="text-muted small">Total</div>
+                </div>
+                <div class="col-3">
+                    <div class="fw-bold fs-5 text-success">${scan.passed}</div>
+                    <div class="text-muted small">Passed</div>
+                </div>
+                <div class="col-3">
+                    <div class="fw-bold fs-5 text-danger">${scan.failed}</div>
+                    <div class="text-muted small">Failed</div>
+                </div>
+                <div class="col-3">
+                    <div class="fw-bold fs-5">${scan.overall_score}%</div>
+                    <div class="text-muted small">Resilience</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr>
+                    <th>#</th><th>Attack</th><th>Score</th><th>Status</th>
+                </tr></thead><tbody>`;
+
+        results.forEach((r, i) => {
+            const badge = r.passed ?
+                '<span class="badge bg-success">Passed</span>' :
+                '<span class="badge bg-danger">Failed</span>';
+            html += `<tr>
+                <td>${i + 1}</td>
+                <td class="small">${r.attack_type || r.vulnerability_type}</td>
+                <td>${(r.score * 100).toFixed(0)}%</td>
+                <td>${badge}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        html += `<a href="/results/${scan.id}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-external-link-alt me-1"></i>View Full Results</a>`;
+
+        $('#staticResultsBody').html(html);
+        $('#staticResultsCard').removeClass('d-none');
+    }
+
+
+    // ================================================================
+    // Utility
+    // ================================================================
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+{% endblock %}

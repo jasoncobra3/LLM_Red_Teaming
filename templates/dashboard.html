@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Scan History{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card .display-6 { font-weight: 700; }
+    .scan-row { cursor: pointer; transition: background 0.15s; }
+    .scan-row:hover { background: rgba(13,110,253,0.04); }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="row mb-4 fade-in">
+    <div class="col">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2>
+                <i class="fas fa-tachometer-alt me-3"></i>
+                Red Team Dashboard
+            </h2>
+            <div class="btn-group">
+                <button class="btn btn-red-team" onclick="refreshDashboard()">
+                    <i class="fas fa-sync-alt me-2"></i> Refresh
+                </button>
+                <a href="/attack" class="btn btn-outline-danger">
+                    <i class="fas fa-plus me-2"></i> New Scan
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4 g-3 fade-in" id="statsRow">
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card text-center">
+            <div class="card-body">
+                <div class="display-6 text-primary" id="statTotal">
+                    <div class="spinner-border spinner-border-sm"></div>
+                </div>
+                <h6 class="card-title text-muted">Total Scans</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card text-center">
+            <div class="card-body">
+                <div class="display-6 text-success" id="statCompleted">-</div>
+                <h6 class="card-title text-muted">Completed</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card text-center">
+            <div class="card-body">
+                <div class="display-6 text-warning" id="statAvgScore">-</div>
+                <h6 class="card-title text-muted">Avg Score</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card text-center">
+            <div class="card-body">
+                <div class="display-6 text-danger" id="statTotalTests">-</div>
+                <h6 class="card-title text-muted">Total Tests</h6>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Scans -->
+<div class="row mb-4 fade-in" id="activeSection" style="display:none;">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h5 class="mb-0">
+                    <i class="fas fa-fire text-warning me-2"></i>
+                    Active Scans
+                </h5>
+            </div>
+            <div class="card-body" id="activeScans"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Scan History Table -->
+<div class="row mb-4 fade-in">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>
+                    Scan History
+                </h5>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary active" data-filter="all">All</button>
+                    <button class="btn btn-outline-success" data-filter="completed">Completed</button>
+                    <button class="btn btn-outline-info" data-filter="running">Running</button>
+                    <button class="btn btn-outline-danger" data-filter="failed">Failed</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="scansTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Tests</th>
+                                <th>Score</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scansBody">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    <div class="spinner-border spinner-border-sm me-2"></div>
+                                    Loading scans...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Vulnerability Stats -->
+<div class="row mb-4 g-4 fade-in">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i> Provider Breakdown</h5>
+            </div>
+            <div class="card-body" id="providerStats">
+                <div class="text-center text-muted py-3">Loading...</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i> Vulnerability Stats</h5>
+            </div>
+            <div class="card-body" id="vulnStats">
+                <div class="text-center text-muted py-3">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentFilter = 'all';
+let refreshTimer = null;
+
+$(document).ready(function() {
+    loadDashboard();
+    refreshTimer = setInterval(loadDashboard, 10000);
+
+    // Filter buttons
+    $('[data-filter]').on('click', function() {
+        $('[data-filter]').removeClass('active');
+        $(this).addClass('active');
+        currentFilter = $(this).data('filter');
+        filterTable();
+    });
+});
+
+async function loadDashboard() {
+    await Promise.all([loadStats(), loadScans(), loadActiveScans()]);
+}
+
+function refreshDashboard() {
+    loadDashboard();
+    showToast('Dashboard refreshed', 'info');
+}
+
+async function loadStats() {
+    try {
+        const resp = await fetch('/api/statistics');
+        const data = await resp.json();
+
+        $('#statTotal').text(data.total_scans);
+        $('#statCompleted').text(data.completed_scans);
+        $('#statAvgScore').text(data.avg_score + '%');
+        $('#statTotalTests').text(data.total_tests);
+
+        // Provider stats
+        if (Object.keys(data.provider_stats).length > 0) {
+            let html = '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Provider</th><th>Scans</th><th>Avg Score</th></tr></thead><tbody>';
+            for (const [provider, stats] of Object.entries(data.provider_stats)) {
+                html += `<tr><td>${provider}</td><td>${stats.scans}</td><td>${stats.avg_score}%</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            $('#providerStats').html(html);
+        } else {
+            $('#providerStats').html('<div class="text-center text-muted py-3">No data yet. Run your first scan!</div>');
+        }
+
+        // Vulnerability stats
+        if (Object.keys(data.vulnerability_stats).length > 0) {
+            let html = '<div style="max-height:300px;overflow-y:auto;">';
+            for (const [vuln, stats] of Object.entries(data.vulnerability_stats)) {
+                const rate = stats.total > 0 ? Math.round(stats.passed / stats.total * 100) : 0;
+                const barColor = rate >= 70 ? 'bg-success' : rate >= 40 ? 'bg-warning' : 'bg-danger';
+                html += `
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="fw-semibold">${vuln}</small>
+                            <small class="text-muted">${stats.passed}/${stats.total} passed (${rate}%)</small>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar ${barColor}" style="width: ${rate}%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            $('#vulnStats').html(html);
+        } else {
+            $('#vulnStats').html('<div class="text-center text-muted py-3">No data yet</div>');
+        }
+    } catch(e) {
+        console.error('Stats error:', e);
+    }
+}
+
+async function loadScans() {
+    try {
+        const resp = await fetch('/api/scans?limit=50');
+        const scans = await resp.json();
+
+        if (scans.length === 0) {
+            $('#scansBody').html(`
+                <tr><td colspan="8" class="text-center text-muted py-4">
+                    No scans yet. <a href="/attack">Launch your first scan!</a>
+                </td></tr>
+            `);
+            return;
+        }
+
+        let html = '';
+        scans.forEach(s => {
+            const scoreClass = getScoreBadgeClass(s.overall_score);
+            html += `
+                <tr class="scan-row" data-status="${s.status}">
+                    <td><strong>#${s.id}</strong></td>
+                    <td>${s.name}</td>
+                    <td>
+                        <small class="text-muted">${s.target_provider}/</small><br>
+                        ${s.target_model}
+                    </td>
+                    <td>${getStatusBadge(s.status)}</td>
+                    <td>
+                        <span class="text-success">${s.passed}</span> /
+                        <span class="text-danger">${s.failed}</span>
+                        <small class="text-muted">(${s.total_tests})</small>
+                    </td>
+                    <td>
+                        <div class="score-badge ${scoreClass}" style="width:40px;height:40px;font-size:0.8rem;">
+                            ${s.overall_score}%
+                        </div>
+                    </td>
+                    <td><small>${timeAgo(s.created_at)}</small></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="/results/${s.id}" class="btn btn-outline-primary" title="View Results">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <button class="btn btn-outline-danger" onclick="deleteScan(${s.id}, event)" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        $('#scansBody').html(html);
+        filterTable();
+    } catch(e) {
+        console.error('Scans error:', e);
+        $('#scansBody').html('<tr><td colspan="8" class="text-center text-danger">Error loading scans</td></tr>');
+    }
+}
+
+async function loadActiveScans() {
+    try {
+        const resp = await fetch('/api/active_scans');
+        const active = await resp.json();
+        const keys = Object.keys(active);
+
+        if (keys.length > 0) {
+            let html = '';
+            keys.forEach(scanId => {
+                const info = active[scanId];
+                html += `
+                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                        <div>
+                            <strong>${info.scan_name || 'Scan #' + scanId}</strong>
+                            <span class="badge bg-info ms-2">${info.status}</span>
+                        </div>
+                        <a href="/results/${scanId}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye me-1"></i> View
+                        </a>
+                    </div>
+                `;
+            });
+            $('#activeScans').html(html);
+            $('#activeSection').show();
+        } else {
+            $('#activeSection').hide();
+        }
+    } catch(e) {
+        $('#activeSection').hide();
+    }
+}
+
+function filterTable() {
+    const rows = $('#scansBody tr');
+    if (currentFilter === 'all') {
+        rows.show();
+    } else {
+        rows.hide();
+        rows.filter(`[data-status="${currentFilter}"]`).show();
+    }
+}
+
+async function deleteScan(scanId, event) {
+    event.stopPropagation();
+    if (!confirm('Delete scan #' + scanId + ' and all its results?')) return;
+    try {
+        await fetch('/api/scans/' + scanId, {method: 'DELETE'});
+        showToast('Scan deleted', 'success');
+        loadScans();
+        loadStats();
+    } catch(e) {
+        showToast('Error deleting scan', 'error');
+    }
+}
+
+$(window).on('beforeunload', function() {
+    if (refreshTimer) clearInterval(refreshTimer);
+});
+</script>
+{% endblock %}

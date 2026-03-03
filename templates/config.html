@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - API Keys{% endblock %}
+{% block nav_config %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .provider-card {
+        transition: all 0.2s;
+        border: 1px solid #dee2e6;
+    }
+    .provider-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .provider-card.configured {
+        border-left: 4px solid #198754;
+    }
+    .provider-card.not-configured {
+        border-left: 4px solid #6c757d;
+    }
+    .provider-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3rem;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+    .provider-icon.openai { background: rgba(0,0,0,0.06); color: #000; }
+    .provider-icon.anthropic { background: rgba(204,119,34,0.1); color: #cc7722; }
+    .provider-icon.azure_openai { background: rgba(0,120,212,0.1); color: #0078d4; }
+    .provider-icon.google_gemini { background: rgba(66,133,244,0.1); color: #4285f4; }
+    .provider-icon.aws_bedrock { background: rgba(255,153,0,0.1); color: #ff9900; }
+    .provider-icon.huggingface { background: rgba(255,213,79,0.15); color: #f5a623; }
+    .provider-icon.groq { background: rgba(255,87,34,0.1); color: #ff5722; }
+    .provider-icon.deepseek { background: rgba(0,150,136,0.1); color: #009688; }
+    .key-input-group {
+        position: relative;
+    }
+    .key-input-group .form-control {
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        padding-right: 40px;
+    }
+    .key-toggle {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+        padding: 4px;
+        z-index: 5;
+    }
+    .key-toggle:hover { color: #333; }
+    .save-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.75rem;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .save-indicator.visible { opacity: 1; }
+    .model-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .model-chip {
+        font-size: 0.7rem;
+        background: #f0f0f0;
+        border-radius: 12px;
+        padding: 2px 8px;
+        color: #555;
+    }
+    .key-label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #495057;
+        font-family: 'Courier New', monospace;
+        letter-spacing: 0.3px;
+    }
+    .hint-text {
+        font-size: 0.7rem;
+        color: #999;
+    }
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .status-dot.active { background: #198754; }
+    .status-dot.inactive { background: #adb5bd; }
+    .test-btn {
+        font-size: 0.78rem;
+        padding: 2px 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">
+                <i class="fas fa-key text-warning me-2"></i>API Key Configuration
+            </h2>
+            <p class="text-muted mb-0">
+                Configure API keys for your LLM providers. Keys are saved to the database and applied immediately.
+            </p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="me-3">
+                <span class="status-dot active me-1"></span>
+                <strong id="configuredCount">0</strong> / <strong>{{ providers|length }}</strong> configured
+            </span>
+            <button class="btn btn-outline-success btn-sm" onclick="testAllProviders()">
+                <i class="fas fa-vial me-1"></i>Test All
+            </button>
+        </div>
+    </div>
+
+    <!-- Provider Cards -->
+    <div class="row g-3">
+        {% for pid, info in providers.items() %}
+        <div class="col-lg-6">
+            <div class="card provider-card {{ 'configured' if info.configured else 'not-configured' }}"
+                 id="card-{{ pid }}" data-provider="{{ pid }}">
+                <div class="card-body">
+                    <!-- Provider Header -->
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="provider-icon {{ pid }}">
+                                {% if pid == 'openai' %}<i class="fas fa-brain"></i>
+                                {% elif pid == 'anthropic' %}<i class="fas fa-robot"></i>
+                                {% elif pid == 'azure_openai' %}<i class="fas fa-cloud"></i>
+                                {% elif pid == 'google_gemini' %}<i class="fas fa-gem"></i>
+                                {% elif pid == 'aws_bedrock' %}<i class="fas fa-server"></i>
+                                {% elif pid == 'huggingface' %}<i class="fas fa-face-smile"></i>
+                                {% elif pid == 'groq' %}<i class="fas fa-bolt"></i>
+                                {% elif pid == 'deepseek' %}<i class="fas fa-magnifying-glass"></i>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <h5 class="fw-bold mb-0">{{ info.display_name }}</h5>
+                                <div class="model-chips mt-1">
+                                    {% for m in info.default_models[:3] %}
+                                    <span class="model-chip">{{ m }}</span>
+                                    {% endfor %}
+                                    {% if info.default_models|length > 3 %}
+                                    <span class="model-chip">+{{ info.default_models|length - 3 }} more</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="save-indicator text-success" id="saved-{{ pid }}">
+                                <i class="fas fa-check-circle"></i> Saved
+                            </span>
+                            <span class="badge {{ 'bg-success' if info.configured else 'bg-secondary' }}"
+                                  id="status-{{ pid }}">
+                                {{ 'Active' if info.configured else 'Not Set' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Key Input Fields -->
+                    <div class="key-fields">
+                        {% for key in info.env_keys %}
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="key-label">{{ key }}</label>
+                                {% if key == 'AZURE_OPENAI_ENDPOINT' %}
+                                <span class="hint-text">https://your-resource.openai.azure.com/</span>
+                                {% elif key == 'AWS_DEFAULT_REGION' %}
+                                <span class="hint-text">e.g. us-east-1</span>
+                                {% elif 'DEPLOYMENT' in key %}
+                                <span class="hint-text">e.g. gpt-4o</span>
+                                {% endif %}
+                            </div>
+                            <div class="key-input-group">
+                                <input type="password"
+                                       class="form-control form-control-sm key-input"
+                                       id="input-{{ pid }}-{{ key }}"
+                                       data-provider="{{ pid }}"
+                                       data-key="{{ key }}"
+                                       placeholder="Enter {{ key }}"
+                                       autocomplete="off"
+                                       spellcheck="false">
+                                <button class="key-toggle" type="button"
+                                        onclick="toggleVisibility(this)" title="Show/Hide">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <button class="btn btn-sm btn-outline-secondary test-btn"
+                                onclick="testProvider('{{ pid }}')" id="test-btn-{{ pid }}">
+                            <i class="fas fa-plug me-1"></i>Test Connection
+                        </button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-danger"
+                                    onclick="clearProvider('{{ pid }}')">
+                                <i class="fas fa-trash me-1"></i>Clear
+                            </button>
+                            <button class="btn btn-sm btn-red-team"
+                                    onclick="saveProvider('{{ pid }}')" id="save-btn-{{ pid }}">
+                                <i class="fas fa-save me-1"></i>Save
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Test Result Area -->
+                    <div class="mt-2 d-none" id="test-result-{{ pid }}"></div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Quick Tips -->
+    <div class="card mt-4">
+        <div class="card-body py-3">
+            <div class="d-flex align-items-start gap-3">
+                <i class="fas fa-lightbulb text-warning fs-5 mt-1"></i>
+                <div>
+                    <h6 class="fw-bold mb-1">Quick Tips</h6>
+                    <ul class="mb-0 small text-muted" style="line-height:1.8">
+                        <li>Keys are saved to the database and applied to the current session immediately &mdash; no server restart needed.</li>
+                        <li>Use <strong>Test Connection</strong> to verify your key works before running attacks.</li>
+                        <li>You only need <strong>one provider</strong> configured to start red-teaming. The same provider can be used as both attacker and target.</li>
+                        <li>For Azure OpenAI, you need all three fields: API key, endpoint URL, and deployment name.</li>
+                        <li>AWS Bedrock uses IAM credentials. Make sure the IAM user has <code>bedrock:InvokeModel</code> permissions.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        loadSavedKeys();
+        updateConfiguredCount();
+    });
+
+    // =========================================
+    // Load saved (masked) keys from DB
+    // =========================================
+    async function loadSavedKeys() {
+        try {
+            const resp = await fetch('/api/saved_keys');
+            const data = await resp.json();
+
+            for (const [pid, info] of Object.entries(data)) {
+                if (info.masked_keys) {
+                    for (const [key, masked] of Object.entries(info.masked_keys)) {
+                        const input = document.getElementById(`input-${pid}-${key}`);
+                        if (input && masked) {
+                            input.setAttribute('placeholder', masked);
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('Failed to load saved keys:', e);
+        }
+    }
+
+    // =========================================
+    // Toggle password visibility
+    // =========================================
+    function toggleVisibility(btn) {
+        const input = $(btn).closest('.key-input-group').find('input');
+        const icon = $(btn).find('i');
+        if (input.attr('type') === 'password') {
+            input.attr('type', 'text');
+            icon.removeClass('fa-eye').addClass('fa-eye-slash');
+        } else {
+            input.attr('type', 'password');
+            icon.removeClass('fa-eye-slash').addClass('fa-eye');
+        }
+    }
+
+    // =========================================
+    // Save provider keys
+    // =========================================
+    async function saveProvider(providerId) {
+        const keys = {};
+        let hasValue = false;
+
+        $(`input[data-provider="${providerId}"]`).each(function() {
+            const key = $(this).data('key');
+            const val = $(this).val().trim();
+            if (val) {
+                keys[key] = val;
+                hasValue = true;
+            }
+        });
+
+        if (!hasValue) {
+            showToast('Please enter at least one key value', 'warning');
+            return;
+        }
+
+        const btn = $(`#save-btn-${providerId}`);
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        try {
+            const resp = await fetch('/api/save_keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider_id: providerId, keys: keys }),
+            });
+
+            if (resp.ok) {
+                // Show saved indicator
+                const indicator = $(`#saved-${providerId}`);
+                indicator.addClass('visible');
+                setTimeout(() => indicator.removeClass('visible'), 3000);
+
+                // Update status badge
+                $(`#status-${providerId}`)
+                    .removeClass('bg-secondary').addClass('bg-success')
+                    .text('Active');
+                $(`#card-${providerId}`)
+                    .removeClass('not-configured').addClass('configured');
+
+                // Update placeholders with masked values
+                $(`input[data-provider="${providerId}"]`).each(function() {
+                    const val = $(this).val().trim();
+                    if (val) {
+                        const masked = val.length > 6
+                            ? val.substring(0, 4) + '****' + val.substring(val.length - 2)
+                            : '****';
+                        $(this).attr('placeholder', masked);
+                        $(this).val('');
+                    }
+                });
+
+                updateConfiguredCount();
+                showToast(`${providerId.replace(/_/g, ' ')} keys saved successfully!`, 'success');
+            } else {
+                const err = await resp.json();
+                showToast(err.detail || 'Failed to save', 'error');
+            }
+        } catch(e) {
+            showToast('Error: ' + e.message, 'error');
+        } finally {
+            btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i>Save');
+        }
+    }
+
+    // =========================================
+    // Clear provider keys
+    // =========================================
+    function clearProvider(providerId) {
+        $(`input[data-provider="${providerId}"]`).each(function() {
+            $(this).val('');
+            const key = $(this).data('key');
+            $(this).attr('placeholder', `Enter ${key}`);
+        });
+        showToast('Fields cleared.', 'info');
+    }
+
+    // =========================================
+    // Test connection
+    // =========================================
+    async function testProvider(providerId) {
+        const btn = $(`#test-btn-${providerId}`);
+        const resultDiv = $(`#test-result-${providerId}`);
+        btn.prop('disabled', true).html(
+            '<span class="spinner-border spinner-border-sm me-1"></span>Testing...');
+        resultDiv.removeClass('d-none').html(
+            '<div class="text-muted small"><i class="fas fa-spinner fa-spin me-1"></i>Sending test request...</div>');
+
+        try {
+            const resp = await fetch('/api/test_provider', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider_id: providerId }),
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                resultDiv.html(
+                    `<div class="alert alert-success py-2 mb-0 small">
+                        <i class="fas fa-check-circle me-1"></i>
+                        <strong>Connection successful!</strong> Response received from ${data.model || providerId}.
+                    </div>`);
+            } else {
+                resultDiv.html(
+                    `<div class="alert alert-danger py-2 mb-0 small">
+                        <i class="fas fa-exclamation-circle me-1"></i>
+                        <strong>Connection failed:</strong> ${data.error || 'Unknown error'}
+                    </div>`);
+            }
+        } catch(e) {
+            resultDiv.html(
+                `<div class="alert alert-danger py-2 mb-0 small">
+                    <i class="fas fa-exclamation-circle me-1"></i>
+                    <strong>Error:</strong> ${e.message}
+                </div>`);
+        } finally {
+            btn.prop('disabled', false).html('<i class="fas fa-plug me-1"></i>Test Connection');
+        }
+    }
+
+    async function testAllProviders() {
+        const cards = document.querySelectorAll('.provider-card.configured');
+        if (cards.length === 0) {
+            showToast('No configured providers to test', 'warning');
+            return;
+        }
+        for (const card of cards) {
+            const pid = card.dataset.provider;
+            await testProvider(pid);
+        }
+    }
+
+    // =========================================
+    // Update configured count
+    // =========================================
+    function updateConfiguredCount() {
+        const count = document.querySelectorAll('.provider-card.configured').length;
+        $('#configuredCount').text(count);
+    }
+</script>
+{% endblock %}

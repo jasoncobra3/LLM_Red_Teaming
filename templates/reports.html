@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Red Teaming{% endblock %}
+{% block nav_reports %}active{% endblock %}
+
+{% block content %}
+<div class="row mb-4 fade-in">
+    <div class="col">
+        <h2>
+            <i class="fas fa-file-alt me-3"></i>
+            Reports
+        </h2>
+        <p class="text-muted">Generate and download reports for your red-team scans.</p>
+    </div>
+</div>
+
+<!-- Reports Table -->
+<div class="row fade-in">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-table me-2"></i> Completed Scans</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadReports()">
+                    <i class="fas fa-sync-alt me-1"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Scan Name</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Tests</th>
+                                <th>Score</th>
+                                <th>Date</th>
+                                <th>Export</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportsBody">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4">
+                                    <div class="spinner-border spinner-border-sm me-2"></div>
+                                    Loading scans...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Export Section -->
+<div class="row mt-4 fade-in">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header card-header-red">
+                <h5 class="mb-0"><i class="fas fa-file-pdf me-2 text-danger"></i> PDF Reports</h5>
+            </div>
+            <div class="card-body">
+                <p>Generate professional PDF reports with executive summaries, vulnerability breakdowns, attack analysis, and detailed test results.</p>
+                <ul class="small text-muted">
+                    <li>Executive summary with pass/fail metrics</li>
+                    <li>Vulnerability breakdown table</li>
+                    <li>Attack type analysis</li>
+                    <li>Detailed per-test results with prompts and responses</li>
+                    <li>Methodology section</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header card-header-green">
+                <h5 class="mb-0"><i class="fas fa-file-csv me-2 text-success"></i> Data Exports</h5>
+            </div>
+            <div class="card-body">
+                <p>Export raw data in CSV or JSON format for further analysis, integration with other tools, or compliance documentation.</p>
+                <ul class="small text-muted">
+                    <li>CSV: Spreadsheet-ready format with all test details</li>
+                    <li>JSON: Machine-readable structured data</li>
+                    <li>Includes prompts, responses, scores, and verdicts</li>
+                    <li>Compatible with data analysis tools</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    loadReports();
+});
+
+async function downloadPDF(scanId) {
+    try {
+        const response = await fetch(`/api/scans/${scanId}/report/pdf`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorMsg = 'Failed to download PDF';
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMsg = errorJson.detail || errorMsg;
+            } catch {
+                errorMsg = errorText || errorMsg;
+            }
+            throw new Error(errorMsg);
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `red_team_report_${scanId}_${new Date().toISOString().split('T')[0]}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch(e) {
+        console.error('PDF download error:', e);
+        alert('Error downloading PDF: ' + e.message);
+    }
+}
+
+async function loadReports() {
+    try {
+        const resp = await fetch('/api/scans?limit=100');
+        const scans = await resp.json();
+
+        // Only show completed scans with results
+        const completed = scans.filter(s => s.status === 'completed' && s.total_tests > 0);
+
+        if (completed.length === 0) {
+            $('#reportsBody').html(`
+                <tr><td colspan="8" class="text-center text-muted py-4">
+                    No completed scans with results. <a href="/attack">Run a scan first!</a>
+                </td></tr>
+            `);
+            return;
+        }
+
+        let html = '';
+        completed.forEach(s => {
+            const scoreClass = getScoreBadgeClass(s.overall_score);
+            const date = s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A';
+
+            html += `
+                <tr>
+                    <td><strong>#${s.id}</strong></td>
+                    <td>${s.name}</td>
+                    <td>${s.target_provider}/${s.target_model}</td>
+                    <td>${getStatusBadge(s.status)}</td>
+                    <td>
+                        <span class="text-success">${s.passed}</span> /
+                        <span class="text-danger">${s.failed}</span>
+                        <small class="text-muted">(${s.total_tests})</small>
+                    </td>
+                    <td>
+                        <span class="score-badge ${scoreClass}" style="width:36px;height:36px;font-size:0.75rem;">
+                            ${s.overall_score}%
+                        </span>
+                    </td>
+                    <td><small>${date}</small></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button onclick="downloadPDF(${s.id})" class="btn btn-outline-danger" title="Download PDF">
+                                <i class="fas fa-file-pdf"></i>
+                            </button>
+                            <a href="/api/scans/${s.id}/report/csv" download class="btn btn-outline-success" title="Download CSV">
+                                <i class="fas fa-file-csv"></i>
+                            </a>
+                            <a href="/api/scans/${s.id}/report/json" download class="btn btn-outline-primary" title="Download JSON">
+                                <i class="fas fa-file-code"></i>
+                            </a>
+                            <a href="/results/${s.id}" class="btn btn-outline-secondary" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        $('#reportsBody').html(html);
+    } catch(e) {
+        $('#reportsBody').html('<tr><td colspan="8" class="text-center text-danger">Error loading scans</td></tr>');
+    }
+}
+</script>
+{% endblock %}
