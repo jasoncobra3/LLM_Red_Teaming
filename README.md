@@ -500,29 +500,6 @@ Comprehensive documentation is available in the [`docs/`](docs/) folder:
 
 ---
 
-## 🔧 Configuration
-
-### Environment Variables
-
-```env
-# Required: At least one provider
-OPENAI_API_KEY=sk-proj-...
-GROQ_API_KEY=gsk_...
-
-# Optional providers
-ANTHROPIC_API_KEY=sk-ant-...
-AZURE_OPENAI_KEY=...
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-GOOGLE_API_KEY=...
-
-# Application settings
-SECRET_KEY=your-secret-key-here
-LOG_LEVEL=INFO
-DEBUG=False
-
-# Database (optional, defaults to SQLite)
-DATABASE_URL=sqlite:///red_teaming.db
-```
 
 ### Supported Models
 
