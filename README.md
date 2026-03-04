@@ -21,8 +21,8 @@ As organizations increasingly adopt Large Language Models (LLMs) for production 
 
 ### Our Solution
 
-The **LLM Red Teaming Platform** is a comprehensive, production-ready security testing framework designed specifically for Large Language Models. It automates the discovery of vulnerabilities through adversarial red teaming techniques, enabling security researchers, AI engineers, and organizations to identify weaknesses before they can be exploited in production.
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jasoncobra3/LLM_Red_Teaming)
+The **LLM Red Teaming Platform** is a comprehensive, production-ready security testing framework designed specifically for Large Language Models. It automates the discovery of vulnerabilities through adversarial red teaming techniques, enabling security researchers, AI engineers, and organizations to identify weaknesses before they can be exploited in production.<br>
+ [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jasoncobra3/LLM_Red_Teaming)
 
 ### Who Is This For?
 
